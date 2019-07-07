@@ -30,6 +30,7 @@ require 'optparse'
 CONFIGURATION_FILE = File.expand_path('~/.elman.yml')
 INDEX_NAME = 'elman'
 APROPOS_REGEX = /(.*)\s\(\d*.*\)\s*-\s*(.*)/
+PAGER = ENV['PAGER'] ? ENV['PAGER'] : 'less'
 
 # Creates the configuration file in user's home directory
 def create_default_configuration_file
@@ -122,7 +123,7 @@ end
 
 # Displays the man page of a selection
 def display_manpage_for_selection(selection, query)
-  IO.popen('less', 'w') do |f|
+  IO.popen(PAGER, 'w') do |f|
     f.puts @results[selection][:manpage]
   end
 
