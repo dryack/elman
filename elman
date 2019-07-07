@@ -51,7 +51,10 @@ end
 
 # Creates the index
 def create_index
-  return if client.indices.exists? index: INDEX_NAME
+  if client.indices.exists? index: INDEX_NAME
+    puts "Index exists..."
+    return
+  end
 
   puts "Creating index: #{INDEX_NAME}"
   client.indices.create  index: INDEX_NAME,
