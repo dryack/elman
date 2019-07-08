@@ -140,7 +140,10 @@ end
 
 # Displays the current matches and prompts for user selection
 def prompt_for_selection(query)
-  puts @results.uniq!.map.with_index { |result, index| "#{index}: #{result[:command].ljust(15)} #{truncate(result[:description])}" } unless query.empty?
+  maxlen = []
+  @results.each { |x| maxlen << x[:command].length } unless @results.nil?
+  maxlen = maxlen.max unless maxlen.empty?
+  puts @results.uniq.map.with_index { |result, index| "#{index}: #{result[:command].ljust(maxlen + 2)} #{truncate(result[:description])}" } unless query.empty?
   if query.empty?
     puts "Type a query or q to exit:"
   elsif @results.size == 0
