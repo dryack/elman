@@ -26,11 +26,16 @@ require 'yaml'
 require 'fileutils'
 require 'elasticsearch'
 require 'optparse'
+require 'tty-prompt'
+require 'tty-cursor'
 
 CONFIGURATION_FILE = File.expand_path('~/.elman.yml')
 INDEX_NAME = 'elman'
 APROPOS_REGEX = /(.*)\s\(\d*.*\)\s*-\s*(.*)/
 PAGER = ENV['PAGER'] ? ENV['PAGER'] : 'less'
+
+@prompt = TTY::Prompt.new
+@cursor = TTY::Cursor
 
 # Creates the configuration file in user's home directory
 def create_default_configuration_file
@@ -121,57 +126,6 @@ def search(term)
                                       manpage: hit['_source']['manpage'] } }
 end
 
-# Displays the man page of a selection
-def display_manpage_for_selection(selection, query)
-  IO.popen(PAGER, 'w') do |f|
-    f.puts @results[selection][:manpage]
-  end
-
-  prompt_for_selection(query)
-end
-
-def truncate(str)
-  if str.length > 70
-    "#{str[0..67]}..."
-  else
-    str
-  end
-end
-
-# Displays the current matches and prompts for user selection
-def prompt_for_selection(query)
-  maxlen = []
-  @results.uniq.each { |x| maxlen << x[:command].length } unless @results.nil?
-  maxlen = maxlen.max unless maxlen.empty?
-  
-  puts @results.uniq.map.with_index { |result, index| "#{index}: #{result[:command].ljust(maxlen + 2)} #{truncate(result[:description])}" } unless query.empty?
-  
-  if query.empty?
-    puts "Type a query or q to exit:"
-  elsif @results.size == 0
-    puts "No man pages found matching your query. Type a new query or q to exit:"
-  else
-    puts "Type a number for the corresponding manpage, q to exit or a new query:"
-  end
-
-  @selected = $stdin.gets.chop
-
-  exit 0 if @selected == 'q'
-
-  begin
-    @selected = Integer(@selected)
-    raise 'invalid command number' if @selected < 0 || @selected > @results.size - 1
-
-    display_manpage_for_selection @selected, query
-  rescue ArgumentError => e
-    # New query
-    handle_search @selected
-  rescue StandardError => e
-    puts "Invalid selection - #{e.message}"
-    prompt_for_selection(query)
-  end
-end
-
 # Utility method to access the elasticseach client
 def client
   @client ||= Elasticsearch::Client.new host: @elasticsearch_host,
@@ -187,6 +141,73 @@ end
 
 create_default_configuration_file unless File.exists?(CONFIGURATION_FILE)
 load_configuration
+
+# Displays the man page of a selection
+def display_manpage_for_selection(selection, query)
+  IO.popen(PAGER, 'w') do |f|
+    f.puts @results[selection][:manpage]
+  end
+
+  print @cursor.up
+  print @cursor.clear_line
+  display_prompt(query)
+end
+
+def truncate(str)
+  if str.length > 70
+    "#{str[0..67]}..."
+  else
+    str
+  end
+end
+
+def new_search
+  print @cursor.up
+  print @cursor.clear_line
+  search = @prompt.ask("Search terms", required: true)
+  handle_search(search)
+end
+
+def display_prompt(query=[])
+  prompt_string = ("Type q to exit or / for new query")
+  if !@results.nil?
+    prompt_string.gsub!(/Type /, 'Type a number for the corresponding manpage, ')
+  end
+  @prompt.expand(prompt_string) do |q|
+    q.choice key: '/', name: 'Perform a new search' do new_search end
+    unless @results.nil? || @results.size == 0 
+      @results.uniq.each_index do |res| 
+        q.choice key: res.to_s, name: res.to_s do display_manpage_for_selection(:key.to_s.to_i, query) end
+      end
+    end
+    q.choice key: 'q', name: 'Quit' do quit end
+  end
+end
+
+# Displays the current matches and prompts for user selection
+def prompt_for_selection(query)
+  maxlen = []
+  @results.uniq.each { |x| maxlen << x[:command].length } unless @results.nil?
+  maxlen = maxlen.max unless maxlen.empty?
+  
+  puts @results.uniq.map.with_index { |result, index| "#{index}: #{result[:command].ljust(maxlen + 2)} #{truncate(result[:description])}" } unless query.empty?
+  
+  if query.empty?
+    display_prompt
+  elsif @results.size == 0
+    puts "No man pages found matching your query."
+    @results = nil
+    display_prompt
+  else
+    display_prompt(query)
+  end
+
+end
+
+def quit
+  exit 0
+end
+
 
 # Use option parser to display info
 OptionParser.new do |opts|
